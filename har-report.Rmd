@@ -11,7 +11,7 @@ library(knitr)
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 library(caret)
 library(randomForest)
-#library(doParallel)
+library(doParallel)
 ```
 
 ## Background & Overview
@@ -68,11 +68,11 @@ nsv <- nearZeroVar(pml, saveMetrics=T)
 # 60 fewer columns after nearZeroVar
 pml <- pml[, !nsv$nzv]
 
-# First 6 columns don't "look" predictive of classe, but keep them and let the algo decide 
+# Remove 6 columns that are about the subject and timing of the exercise
 #  [1] "X"                        "user_name"               
 #  [3] "raw_timestamp_part_1"     "raw_timestamp_part_2"    
 #  [5] "cvtd_timestamp"           "num_window"
-#pml <- pml[,c(-1,-2)]
+pml <- pml[,c(-1:-6)]
 
 keepThresh <- 0.6 # must have at least 60% of the columns with values
 keepCol <- sapply(1:ncol(pml), function(i) ifelse(  sum(is.na(pml[,i])) / ncol(pml) > keepThresh, FALSE,TRUE))
@@ -127,16 +127,23 @@ plot(gbmModel)
 The random forest model gives .999 accuracy while the boosted model "only" gives .997 accuracy. So even though they are extremely close,
 the random forest is used to make the predictions for the exercise.
 
+Calculate the out of sample error on random forest model using the validation test set.
+
 ```{r}
 
-rfModel$finalModel
+validationPred <- predict(rfModel, newdata=validation)
+
+# accuracy of the model
+rfAccuracy <- sum(validationPred == validation$classe)/length(validationPred)
+rfAccuracy
+
+# out of sample error and percentage of out of sample error
+oose <- 1 - rfAccuracy
+oose
 
 ```
 
-As seen above, the out of sample (aka out of bag, OOB) error rate is 0.03%.
-
-
-## Predictions
+The out of sample error is `r oose * 100`%.
 
 
 Apply the model to the testing set to generate the predicted values.
