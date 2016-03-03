@@ -11,6 +11,7 @@ library(knitr)
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 library(caret)
 library(randomForest)
+#library(doParallel)
 ```
 
 ## Background & Overview
@@ -57,29 +58,40 @@ exercise. This is the "classe" variable in the data.
 
 ### Data Load and Preparation
 
+Load the training data.
+Remove columns with near zero variance, columns that are more than 60% NA, and columns
+that identify the person doing the exercise.
+
 ```{r load}
 pml <- read.csv("data/pml-training.csv")
 nsv <- nearZeroVar(pml, saveMetrics=T)
 # 60 fewer columns after nearZeroVar
-training <- pml[, !nsv$nzv]
+pml <- pml[, !nsv$nzv]
 
 # First 6 columns don't "look" predictive of classe, but keep them and let the algo decide 
 #  [1] "X"                        "user_name"               
 #  [3] "raw_timestamp_part_1"     "raw_timestamp_part_2"    
 #  [5] "cvtd_timestamp"           "num_window"
-training <- training[,c(-1,-2)]
+#pml <- pml[,c(-1,-2)]
+
+keepThresh <- 0.6 # must have at least 60% of the columns with values
+keepCol <- sapply(1:ncol(pml), function(i) ifelse(  sum(is.na(pml[,i])) / ncol(pml) > keepThresh, FALSE,TRUE))
+
+pml <- pml[,keepCol]
 
 ```
-Many of the columns are mostly NA and would therefor not be usseful for developing preditions models.
-Columns that are more than 60% NA are excluded from prediction.
+
+
+Partition the data for testing and validation.
 
 ```{r}
-# If more than KeepThresh % rows in a column are NA, drop them
-keepThresh <- 0.6 # must have at least 60% of the columns with values
-keepCol <- sapply(1:ncol(training), function(i) ifelse(  sum(is.na(training[,i])) / ncol(training) > keepThresh, FALSE,TRUE))
 
-training <- training[,keepCol]
+forTrain <- createDataPartition(y=pml$classe, p = 0.75, list=F)
+training <- pml[forTrain,]
+validation <- pml[-forTrain,]
+
 ```
+
 
 ## Train and evaluate potential models
 
@@ -89,14 +101,23 @@ K fold cross validation is performed, with k=10.
 ```{r trainmodel, cache=TRUE}
 set.seed(5691)
 
-# train a random forest
+#cl <- makeCluster(detectCores())
+#registerDoParallel(cl)
+## train a random forest
 #rfModel <- train(classe ~ ., data=training, method="rf", trControl = trainControl(method = "cv", number = 10), tunegrid=data.frame(mtry=41))
+#stopCluster(cl)
+#save(rfModel, file="rfModel.RData")
+
+# loading model previously generated as above to save processing time
 load("rfModel.RData")
 rfModel
 plot(rfModel)
 
 # train a gbm model 
 #gbmModel <- train(classe ~ ., data=training, method="gbm", verbose=FALSE, trControl = trainControl(method = "cv", number = 10))
+#save(gbmModel, file="gbmModel.RData")
+
+# loading model previously generated as above to save processing time
 load("gbmModel.RData")
 gbmModel
 plot(gbmModel)
@@ -106,9 +127,23 @@ plot(gbmModel)
 The random forest model gives .999 accuracy while the boosted model "only" gives .997 accuracy. So even though they are extremely close,
 the random forest is used to make the predictions for the exercise.
 
+```{r}
+
+rfModel$finalModel
+
+```
+
+As seen above, the out of sample (aka out of bag, OOB) error rate is 0.03%.
+
+
+## Predictions
+
+
+Apply the model to the testing set to generate the predicted values.
 
 ```{r finaltest}
 testing <- read.csv("data/pml-testing.csv")
 preds <- predict(rfModel, testing)
+preds
 ```
 
